@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Form</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #1a1d23;
+            font-family: 'Inter', sans-serif;
+        }
+        .glassmorphism {
+            backdrop-filter: blur(10px);
+            background-color: rgba(255, 255, 255, 0.1);
+            border-radius: 1rem;
+            padding: 1rem;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+        }
+    </style>
+</head>
+<body>
+    <div class="container mx-auto p-4 pt-6 mt-10 glassmorphism">
+        <h1 class="text-3xl text-indigo-500 mb-4">Dynamic Form</h1>
+        <form id="dynamic-form">
+            <!-- Form fields will be rendered here -->
+        </form>
+        <button id="submit-button" class="bg-indigo-500 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded">Submit</button>
+        <div id="loading" class="hidden">Loading...</div>
+        <div id="success" class="hidden text-green-500">Form submitted successfully!</div>
+        <div id="error" class="hidden text-red-500"></div>
+    </div>
+
+    <script>
+        const BASE_URL = 'http://localhost:8080';
+        const FORM_CODE = 'testform6';
+        const formFields = {};
+        const formValues = {};
+
+        // Fetch form schema
+        fetch(`${BASE_URL}/api/v1/runtime/forms/${FORM_CODE}`)
+            .then(response => response.json())
+            .then(schema => {
+                // Render form fields
+                schema.fields.forEach(field => {
+                    const fieldId = field.id;
+                    const fieldLabel = field.label;
+                    const fieldType = field.type;
+                    const fieldRequired = field.required;
+
+                    // Create field element
+                    const fieldElement = document.createElement('div');
+                    fieldElement.innerHTML = `
+                        <label for="${field.columnName}" class="block text-sm font-medium text-gray-200">${fieldLabel}</label>
+                        <input id="${field.columnName}" type="${fieldType}" class="block w-full p-2 pl-10 text-sm text-gray-200 border border-gray-400 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" ${fieldRequired ? 'required' : ''}>
+                    `;
+
+                    // Add field to form
+                    document.getElementById('dynamic-form').appendChild(fieldElement);
+
+                    // Initialize field value
+                    formValues[field.columnName] = '';
+
+                    // Add event listener for field changes
+                    document.getElementById(field.columnName).addEventListener('input', event => {
+                        formValues[field.columnName] = event.target.value;
+                    });
+                });
+
+                // Add event listener for form submission
+                document.getElementById('submit-button').addEventListener('click', event => {
+                    event.preventDefault();
+
+                    // Show loading message
+                    document.getElementById('loading').classList.remove('hidden');
+
+                    // Submit form data
+                    fetch(`${BASE_URL}/api/v1/runtime/forms/${FORM_CODE}/submissions`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            data: formValues,
+                            status: 'FINAL'
+                        })
+                    })
+                    .then(async response => {
+                        // Hide loading message
+                        document.getElementById('loading').classList.add('hidden');
+
+                        if (response.ok) {
+                            const data = await response.json();
+                            // Show success message
+                            document.getElementById('success').classList.remove('hidden');
+                            document.getElementById('error').classList.add('hidden');
+
+                            // Reset form fields
+                            Object.keys(formValues).forEach(ck => {
+                                const el = document.getElementById(ck);
+                                if (el) el.value = '';
+                                formValues[ck] = '';
+                            });
+                        } else {
+                            const errorData = await response.json();
+                            document.getElementById('error').classList.remove('hidden');
+                            document.getElementById('success').classList.add('hidden');
+                            
+                            // Extract detailed validation errors if available
+                            let errorMsg = errorData.message || 'Submission failed';
+                            if (errorData.details && errorData.details.length > 0) {
+                                const details = errorData.details.map(d => `${d.fieldKey || ''}: ${d.message}`).join(', ');
+                                errorMsg += ` (${details})`;
+                            }
+                            document.getElementById('error').textContent = errorMsg;
+                        }
+                    })
+                    .catch(error => {
+                        // Hide loading message
+                        document.getElementById('loading').classList.add('hidden');
+                        document.getElementById('error').classList.remove('hidden');
+                        document.getElementById('error').textContent = 'Network error: ' + error.message;
+                    });
+                });
+            })
+            .catch(error => {
+                console.error(error);
+            });
+    </script>
+</body>
+</html>

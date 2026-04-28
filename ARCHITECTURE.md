@@ -1,0 +1,331 @@
+# 🏗️ System Architecture
+
+**Last Updated:** April 2026  
+**Status:** Production-Ready with Workflow & Rule Engine Enabled
+
+---
+
+## 📊 System Overview
+
+FormBuilder3 is a **dynamic, enterprise-grade form builder** with real PostgreSQL table generation and comprehensive workflow/approval systems.
+
+### Technology Stack
+- **Frontend:** Next.js 16.1.6, React, TypeScript, Tailwind CSS, Zustand
+- **Backend:** Spring Boot 3.5.11, Java 17, PostgreSQL 14+
+- **Authentication:** Session-based (Spring Security)
+- **Features:** Workflow engine, rule engine, versioning, soft deletes
+
+```
+User Interface (Next.js)        Business Logic (Spring Boot)        Database (PostgreSQL)
+────────────────────────        ─────────────────────────          ──────────────────────
+
+  Form Builder            →         Controllers (15)          →      Metadata Tables
+  Canvas UI               →         Services & Repositories   →      Form Schema
+  Rule Engine Tab         →         Rule Engine [ENABLED]     →      form_X tables
+  Workflow Modal          →         Workflow Engine [ENABLED] →      Submissions
+  + Zustand Store         ←         Validation Engine         ←      (sub_form_X_vY)
+                                    Version Management
+```
+
+**Key Principle:** Forms are versioned, immutable snapshots. Publishing creates a dedicated PostgreSQL table, ensuring submissions preserve schema integrity.
+
+---
+
+## 🔄 How It Works: Form Publication
+
+```
+Step 1: User creates form in builder (DRAFT)
+        ↓
+Step 2: User clicks "Publish"
+        ↓
+Step 3: Backend validates:
+        ├─ All fields have valid types
+        ├─ Rules are syntactically correct
+        └─ Table name doesn't conflict
+        ↓
+Step 4: Backend generates PostgreSQL table
+        ├─ CREATE TABLE "sub_form_1_v2" (...)
+        ├─ Each field → one column
+        └─ Add default columns (submitted_at, created_by_id)
+        ↓
+Step 5: Form becomes PUBLISHED
+        ├─ Public link generated: /f/{unique-token}
+        ├─ Can now accept submissions
+        └─ Previous version archived
+```
+
+---
+
+## 📝 How It Works: Form Submission
+
+```
+User fills form online
+        ↓
+Frontend validates (quick feedback)
+        ↓
+User clicks Submit → POST /api/v1/runtime/submit
+        ↓
+Backend receives submission:
+        ├─ Verify user has permission
+        ├─ Re-validate all data (server-side)
+        ├─ Re-evaluate rules (prevent tampering)
+        ├─ Look up correct table (sub_form_1_v2)
+        └─ Find database columns from FormVersion
+        ↓
+Backend executes SQL (parameterized, safe):
+        INSERT INTO "sub_form_1_v2" (field_1, field_2, submitted_at)
+        VALUES (?, ?, NOW())
+        ↓
+Data saved to PostgreSQL
+Audit log created
+Success message sent to frontend
+```
+
+---
+
+## 🛠️ Technology Stack
+
+| Layer | Technology | Why This Choice |
+|-------|-----------|-----------------|
+| **Frontend** | Next.js 16 + React 19 | Server components + type safety |
+| **State** | Zustand | Lightweight, minimal boilerplate |
+| **Drag-Drop** | @dnd-kit | Modern, headless D&D library |
+| **Backend** | Spring Boot 3.5 | Enterprise standard, security built-in |
+| **Language** | Java 21 | Modern records, pattern matching |
+| **Database** | PostgreSQL 14+ | Strong JSON support, versioning |
+| **Auth** | Spring Security | Industry standard, works with sessions |
+| **Styling** | Tailwind CSS | Utility-first, fast development |
+
+---
+
+## 💾 Database Structure
+
+### Core Tables
+
+```
+FORMS                          FORM_VERSIONS              FORM_FIELDS
+├─ id                         ├─ id                      ├─ id
+├─ title                      ├─ form_id → FORMS.id      ├─ version_id → FORM_VERSIONS.id
+├─ code (unique)              ├─ version_number          ├─ column_name
+├─ status                     ├─ rules (JSON)            ├─ field_type (TEXT, NUMERIC, etc.)
+├─ share_token (UUID)         ├─ published_at            ├─ label
+└─ created_by_id → USERS.id   └─ created_at              ├─ validation_json
+                                                         └─ display_order
+```
+
+### Dynamic Submission Tables
+
+When you publish a form (e.g., form ID=1, version=2), a table is created:
+
+```
+"sub_form_1_v2"
+├─ submission_id (PK)         Auto-increment ID
+├─ field_name_1 (VARCHAR)     From FORM_FIELDS
+├─ field_name_2 (INTEGER)     From FORM_FIELDS
+├─ submitted_at (TIMESTAMP)   When submitted
+├─ created_by_id (INTEGER)    Who submitted (if logged in)
+└─ ... (one column per form field)
+```
+
+**Why separate files:** Each version gets its own table. Old submissions stay intact when you update a form.
+
+---
+
+## 🔐 Authentication & Authorization
+
+### Session-Based (Not Tokens)
+
+```
+User logs in
+    ↓
+Spring Security checks credentials (BCrypt)
+    ↓
+If valid: Create JSESSIONID cookie
+    ↓
+Frontend includes cookie with every request
+    ↓
+Backend verifies session is valid
+    ↓
+Proceed with request
+```
+
+**Key Features:**
+- **One session per user:** If user logs in on Device A, then Device B, Device A is logged out
+- **15-minute timeout:** Idle sessions expire automatically
+- **Secure cookies:** HttpOnly, SameSite=Lax (production: Secure flag enabled)
+
+### Role-Based Access Control (RBAC)
+
+```
+Users
+  ↓ (assigned to)
+Roles
+  ├─ ADMIN: Full system access
+  ├─ MENTOR: Can create/publish forms, view all responses
+  └─ INTERN: Can submit forms, view own responses
+  ↓ (has permissions to)
+Modules (features)
+  ├─ Forms Builder
+  ├─ Form Responses
+  ├─ Admin Panel
+  └─ Audit Logs
+```
+
+---
+
+## 🎨 Frontend Structure
+
+```
+app/
+├─ page.tsx                    Home/Dashboard
+├─ login/page.tsx              Login page
+├─ profile/page.tsx            User profile
+│
+├─ builder/
+│  ├─ page.tsx                 Form builder (drag-drop)
+│  └─ preview/page.tsx         Form preview
+│
+├─ forms/[id]/
+│  └─ responses/page.tsx        View form responses
+│
+├─ f/[token]/page.tsx           Public form submission (no auth)
+│
+└─ admin/
+   ├─ users/page.tsx            User management
+   ├─ roles/page.tsx            Role management
+   └─ audit/page.tsx            Audit logs
+
+components/
+├─ builder/
+│  ├─ Canvas.tsx               Main editing area (drag-drop)
+│  ├─ Sidebar.tsx              Available field types
+│  ├─ PropertiesPanel.tsx       Field config/settings
+│  ├─ LogicPanel.tsx            Rule builder (IF-THEN)
+│  └─ VersionsPanel.tsx         Version history
+│
+└─ FormRenderer.tsx            Display form for submission
+
+store/
+├─ useFormStore.ts             Current form being edited
+└─ useUIStore.ts               UI state (panel toggles, etc.)
+
+services/
+├─ api.ts                       API client wrapper
+└─ ...                          Domain-specific services
+```
+
+---
+
+## 🧠 Rule Engine
+
+Forms support conditional rules (IF-THEN logic) to make forms dynamic:
+
+```json
+{
+  "condition": {
+    "field": "age",
+    "operator": "greaterThan",
+    "value": 18
+  },
+  "action": {
+    "type": "show",
+    "targetField": "voter_id_section"
+  }
+}
+```
+
+**Evaluated twice:**
+1. **Client-side (Frontend):** For instant UI feedback as the user types
+2. **Server-side (Backend):** For data integrity (prevent tampering before DB insert)
+
+**Supported operators:** `equals`, `notEquals`, `greaterThan`, `lessThan`, `contains`, `startsWith`, `endsWith`
+**Supported actions:** `show`, `hide`, `enable`, `disable`, `require`, `clearValue`
+
+---
+
+## 🧮 Calculated Fields
+
+Calculated fields dynamically compute their values based on formulas referencing other fields (e.g., `{{price}} * {{quantity}}`).
+
+**How they are stored in the DB:**
+Calculated fields are treated identically to standard user-input fields at the database level. 
+1. When the dynamic table (`sub_form_X_vY`) is generated, a physical column (e.g., `NUMERIC` or `VARCHAR`) is created for the calculated field.
+2. The formula computation happens in the FormBuilder UI in real-time as the user streams input.
+3. Upon submission, the calculated static value is sent in the JSON payload to the backend.
+4. The backend verifies the value and inserts it into the Postgres column directly.
+
+This allows calculated fields to be easily queried via SQL later without needing to re-evaluate the formulas during reporting.
+
+---
+
+## 🔄 Workflow Engine
+
+FormBuilder3 includes an embedded Workflow Engine to handle multi-step approval processes attached to form submissions.
+
+### How it works:
+1. **Definition:** A form can be attached to a specific workflow (JSON representation of steps).
+2. **Steps:** Each step involves an action (e.g., "Manager Approval") and is assigned to specific user roles or individuals.
+3. **Trigger:** When a user submits a form, `SubmissionService` triggers the first step of the associated workflow.
+4. **State Tracking:** The `submission_status` column in the dynamic table updates as the workflow progresses (e.g., `SUBMITTED` → `PENDING_REVIEW` → `APPROVED` / `REJECTED`).
+5. **Auditing:** Every workflow transition is logged in the `AuditLog` table for compliance.
+
+---
+
+## 🛡️ Schema Drift Prevention
+
+Because FormBuilder3 generates actual PostgreSQL tables based on JSON form versions, there is a risk of **Schema Drift** — where the Postgres table physically diverges from the application's JSON representation of the form (e.g., someone manually dropping a column in pgAdmin).
+
+To protect against this:
+1. **Fail-Fast Startup Check:** The backend runs a `StartupSchemaValidator` when Spring Boot initializes.
+2. It loops through all `PUBLISHED` forms and checks the `information_schema.columns` against the active JSON `FormVersion`.
+3. If it detects that columns are missing or type stability is violated, the application throws an **`IllegalStateException`** and refuses to start.
+4. This ensures runtime data corruption is impossible, forcing administrators to resolve DB inconsistencies immediately.
+
+---
+
+## 🔒 Security Hardening
+
+| Threat | Solution |
+|--------|----------|
+| **SQL Injection** | Parameterized queries (? placeholders), validated column names |
+| **Session Hijacking** | HTTPOnly cookies, SameSite policy, HTTPS in production |
+| **Brute Force Login** | Account lockout after 5 failed attempts (recommended) |
+| **Data Tampering** | Server-side re-validation of all rules & data types |
+| **Form Enumeration** | UUID-based share tokens (not sequential IDs) |
+| **CSRF** | SameSite=Strict cookies, session-based (not stateless) |
+
+---
+
+## 📡 API Routes
+
+```
+/api/v1
+├─ auth/
+│  ├─ POST /login
+│  ├─ POST /logout
+│  └─ GET /me
+│
+├─ forms/
+│  ├─ GET /          (list forms)
+│  ├─ POST /         (create form)
+│  ├─ GET /:id       (form detail)
+│  ├─ PUT /:id       (update form)
+│  └─ POST /:id/publish    (publish version)
+│
+├─ runtime/          (for form submissions)
+│  ├─ POST /submit   (submit form response)
+│  └─ GET /drafts/:id
+│
+└─ admin/            (requires ADMIN role)
+   ├─ users/
+   ├─ roles/
+   └─ modules/
+```
+
+---
+
+## 🎯 Next Steps
+
+→ [See DOCUMENTATION.md](./DOCUMENTATION.md) for API reference
+→ [See IMPLEMENTATION_GUIDE.md](./IMPLEMENTATION_GUIDE.md) to set it up
+→ [See SECURITY_AUDIT.md](./SECURITY_AUDIT.md) for hardening checklist
