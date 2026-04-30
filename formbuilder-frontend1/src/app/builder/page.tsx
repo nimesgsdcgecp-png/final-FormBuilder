@@ -119,10 +119,10 @@ const sanitizeImportedSchema = (schema: FormSchema): FormSchema => {
         return { ...c, id: crypto.randomUUID() };
       }
       if (c.type === 'group') {
-        return { 
-          ...c, 
-          id: crypto.randomUUID(), 
-          conditions: c.conditions ? sanitizeConditions(c.conditions) : [] 
+        return {
+          ...c,
+          id: crypto.randomUUID(),
+          conditions: c.conditions ? sanitizeConditions(c.conditions) : []
         };
       }
       return { ...c, id: crypto.randomUUID() }; // Fallback
@@ -138,9 +138,10 @@ const sanitizeImportedSchema = (schema: FormSchema): FormSchema => {
   };
 
   const sanitizeValidations = (validations: any[]): any[] => {
-    return validations.map(v => ({
+    return validations.map((v, index) => ({
       ...v,
-      id: crypto.randomUUID()
+      id: crypto.randomUUID(),
+      executionOrder: v.executionOrder ?? index
     }));
   };
 
@@ -175,7 +176,7 @@ function BuilderContent() {
   const isPrivileged = assignments.some((a) =>
     ['ADMIN', 'ROLE_ADMIN', 'ROLE_ADMINISTRATOR', 'BUILDER', 'ROLE_BUILDER'].includes(a.role.name)
   );
-  
+
   // Everyone in the builder whitelist (including USER) can see the editor
   const canAccessBuilder = assignments.some((a) =>
     ['ADMIN', 'ROLE_ADMIN', 'ROLE_ADMINISTRATOR', 'BUILDER', 'ROLE_BUILDER', 'USER', 'ROLE_USER'].includes(a.role.name)
@@ -203,13 +204,13 @@ function BuilderContent() {
           if (typeof data.rulesEnabled === 'boolean') setIsRulesEnabled(data.rulesEnabled);
         }
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   // Automatic tab correction if a feature is disabled
   useEffect(() => {
     if (!isRulesEnabled && (activeTab === 'LOGIC' || activeTab === 'VALIDATIONS')) {
-       setActiveTab('EDITOR');
+      setActiveTab('EDITOR');
     }
   }, [isRulesEnabled, activeTab]);
 
@@ -619,7 +620,7 @@ function BuilderContent() {
       }
 
       const activeParent = findParentField(schema.fields, active.id as string);
-      const overParent   = findParentField(schema.fields, over.id as string);
+      const overParent = findParentField(schema.fields, over.id as string);
 
       if (activeParent?.id === overParent?.id) {
         // ── Same container — simple reorder ──────────────────────────
@@ -762,7 +763,7 @@ function BuilderContent() {
                         onChange={(e) => {
                           const sanitized = sanitizeFormCode(e.target.value);
                           useFormStore.setState(s => ({ schema: { ...s.schema, code: sanitized } }));
-                          
+
                           // Validate in real-time
                           const validation = validateFormCode(sanitized);
                           setCodeValidationError(validation.valid ? null : validation.error || null);
@@ -810,7 +811,7 @@ function BuilderContent() {
               >
                 <Layout size={13} /> Editor
               </button>
-              
+
               {isRulesEnabled && (
                 <>
                   <button
@@ -843,7 +844,7 @@ function BuilderContent() {
                 disabled={!isAiEnabled}
                 title={isAiEnabled ? "Launch AI Architect" : "AI Architect is disabled"}
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all
-                  ${isAiEnabled 
+                  ${isAiEnabled
                     ? 'gradient-accent text-white shadow-sm hover:shadow-md hover:-translate-y-0.5 cursor-pointer'
                     : 'bg-gray-200 text-gray-500 cursor-not-allowed opacity-50 dark:bg-gray-800 dark:text-gray-600'
                   }
@@ -866,8 +867,8 @@ function BuilderContent() {
                   onClick={() => {
                     try {
                       localStorage.setItem('form_builder_preview', JSON.stringify({
-                          ...schema,
-                          // Ensure we don't accidentally preserve status or IDs if we don't want to
+                        ...schema,
+                        // Ensure we don't accidentally preserve status or IDs if we don't want to
                       }));
                       window.open('/builder/preview', '_blank');
                     } catch {
@@ -978,8 +979,8 @@ function BuilderContent() {
 
         {/* Workflow Initiation Modal */}
         {isWorkflowModalOpen && (
-          <div 
-            className="fixed inset-0 flex items-center justify-center p-4 backdrop-blur-xl bg-black/60 animate-in fade-in duration-300" 
+          <div
+            className="fixed inset-0 flex items-center justify-center p-4 backdrop-blur-xl bg-black/60 animate-in fade-in duration-300"
             style={{ zIndex: 9999 }}
             onClick={(e) => {
               if (e.target === e.currentTarget) setIsWorkflowModalOpen(false);
@@ -1133,19 +1134,19 @@ function BuilderContent() {
         )}
 
         {/* AI Architect Modal */}
-        <AiArchitectModal 
-          isOpen={isAiModalOpen} 
-          onClose={() => setIsAiModalOpen(false)} 
+        <AiArchitectModal
+          isOpen={isAiModalOpen}
+          onClose={() => setIsAiModalOpen(false)}
           onImport={(s) => {
-             const clean = sanitizeImportedSchema(s);
-             if (clean.title) setTitle(clean.title);
-             if (clean.description) setDescription(clean.description);
-             if (clean.fields) setFields(clean.fields);
-             if (clean.rules) setRules(clean.rules);
-             if (clean.formValidations) setFormValidations(clean.formValidations);
-             setIsAiModalOpen(false);
-             toast.success('AI Schema imported and sanitized successfully!');
-          }} 
+            const clean = sanitizeImportedSchema(s);
+            if (clean.title) setTitle(clean.title);
+            if (clean.description) setDescription(clean.description);
+            if (clean.fields) setFields(clean.fields);
+            if (clean.rules) setRules(clean.rules);
+            if (clean.formValidations) setFormValidations(clean.formValidations);
+            setIsAiModalOpen(false);
+            toast.success('AI Schema imported and sanitized successfully!');
+          }}
         />
       </div>
     </DndContext>
